@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, interactive-widget=resizes-visual">
+<title>Zeus — Telegram</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M16 4L16 22L6 22Z' fill='%23e06c75'/%3E%3Cpath d='M16 8L16 22L24 22Z' fill='%23e06c75' opacity='0.6'/%3E%3C/svg%3E">
+<script nonce="{{CSP_NONCE}}">
+(function () {
+  try {
+    var t = JSON.parse(localStorage.getItem('odysseus-theme'));
+    var s = document.documentElement.style;
+    if (t && t.colors) {
+      var c = t.colors;
+      if (c.bg) s.setProperty('--zeus-bg', c.bg);
+      if (c.fg) s.setProperty('--zeus-fg', c.fg);
+      if (c.panel) s.setProperty('--zeus-panel', c.panel);
+      if (c.border) s.setProperty('--zeus-border', c.border);
+    }
+    if (t && t.name === 'light') document.documentElement.classList.add('light');
+  } catch (e) {}
+})();
+</script>
+<style>
+  :root {
+    --zeus-bg: #282c34;
+    --zeus-fg: #9cdef2;
+    --zeus-panel: #111;
+    --zeus-border: #355a66;
+    --surface-1: var(--zeus-panel);
+    --page-plane: var(--zeus-bg);
+    --text-primary: var(--zeus-fg);
+    --text-secondary: color-mix(in srgb, var(--zeus-fg) 70%, var(--zeus-panel));
+    --text-muted: color-mix(in srgb, var(--zeus-fg) 45%, var(--zeus-panel));
+    --border: var(--zeus-border);
+    --accent: #3987e5;
+    --good: #0ca30c;
+    --critical: #d03b3b;
+  }
+  :root.light {
+    --text-secondary: color-mix(in srgb, var(--zeus-fg) 75%, white);
+    --text-muted: color-mix(in srgb, var(--zeus-fg) 50%, white);
+    --accent: #2a78d6;
+    --good: #0ca30c;
+    --critical: #d03b3b;
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not(.light) { --zeus-bg: #f5f5f5; --zeus-fg: #2b2b2b; --zeus-panel: #fff; --zeus-border: #bbb; }
+  }
+  * { box-sizing: border-box; }
+  html, body { min-height: 100%; margin: 0; }
+  body {
+    background: var(--page-plane);
+    color: var(--text-primary);
+    font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+    padding: 32px 20px 80px;
+  }
+  .wrap { max-width: 560px; margin: 0 auto; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: var(--text-secondary); margin: 0 0 28px; font-size: 13.5px; }
+  .card {
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px;
+    padding: 18px 20px; margin-bottom: 16px;
+  }
+  .card h2 { font-size: 14px; margin: 0 0 8px; color: var(--text-primary); }
+  .hint { color: var(--text-secondary); font-size: 12.5px; margin: 0 0 12px; }
+  .hint a { color: var(--accent); }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  input[type="password"], input[type="text"] {
+    flex: 1 1 220px; padding: 9px 11px; border-radius: 8px; border: 1px solid var(--border);
+    background: var(--page-plane); color: var(--text-primary); font-size: 13.5px; outline: none;
+    min-width: 0;
+  }
+  input:focus { border-color: var(--accent); }
+  button {
+    padding: 9px 14px; border-radius: 8px; border: 1px solid var(--accent);
+    background: var(--accent); color: #fff; font-size: 13px; font-weight: 500;
+    cursor: pointer; white-space: nowrap;
+  }
+  button.secondary { background: transparent; color: var(--text-primary); border-color: var(--border); }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .msg { margin-top: 10px; font-size: 12.5px; min-height: 1em; }
+  .msg.ok { color: var(--good); }
+  .msg.err { color: var(--critical); }
+  .status-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 13px; }
+  .status-row .label { color: var(--text-secondary); }
+  .badge { font-weight: 600; }
+  .badge.yes { color: var(--good); }
+  .badge.no { color: var(--text-muted); }
+  a.back { color: var(--text-secondary); font-size: 12.5px; text-decoration: none; }
+  a.back:hover { color: var(--text-primary); }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <a class="back" href="/">&larr; Back to Zeus</a>
+    <h1 style="margin-top:14px;">Telegram Bridge</h1>
+    <p class="sub">Pair one Telegram chat for full agent access — same tools as the web UI. Anyone who isn't paired is silently ignored.</p>
+
+    <div class="card">
+      <div class="status-row"><span class="label">Bot token</span><span class="badge" id="st-token">—</span></div>
+      <div class="status-row"><span class="label">Enabled</span><span class="badge" id="st-enabled">—</span></div>
+      <div class="status-row"><span class="label">Paired</span><span class="badge" id="st-paired">—</span></div>
+      <div class="status-row"><span class="label">Account</span><span class="badge" id="st-owner">—</span></div>
+    </div>
+
+    <div class="card">
+      <h2>1. Bot token</h2>
+      <p class="hint">Create a bot with <a href="https://t.me/BotFather" target="_blank" rel="noopener noreferrer">@BotFather</a> on Telegram, then paste the token here. It's verified against Telegram and stored encrypted — never shown again.</p>
+      <div class="row">
+        <input id="token-input" type="password" placeholder="123456789:AA...." autocomplete="off">
+        <button id="save-token-btn">Save &amp; Verify</button>
+      </div>
+      <div class="msg" id="token-msg"></div>
+    </div>
+
+    <div class="card">
+      <h2>2. Pair</h2>
+      <p class="hint">Opens a 5-minute window. Message your bot on Telegram during that time and its next message binds that chat to your account, permanently.</p>
+      <button id="pair-btn">Start Pairing</button>
+      <div class="msg" id="pair-msg"></div>
+    </div>
+
+    <div class="card">
+      <h2>3. Manage</h2>
+      <div class="row">
+        <button id="enable-btn" class="secondary">Enable</button>
+        <button id="disable-btn" class="secondary">Disable</button>
+        <button id="test-btn" class="secondary">Send Test Message</button>
+      </div>
+      <div class="msg" id="manage-msg"></div>
+    </div>
+  </div>
+
+<script nonce="{{CSP_NONCE}}">
+(function () {
+  'use strict';
+  var els = {
+    stToken: document.getElementById('st-token'),
+    stEnabled: document.getElementById('st-enabled'),
+    stPaired: document.getElementById('st-paired'),
+    stOwner: document.getElementById('st-owner'),
+    tokenInput: document.getElementById('token-input'),
+    saveTokenBtn: document.getElementById('save-token-btn'),
+    tokenMsg: document.getElementById('token-msg'),
+    pairBtn: document.getElementById('pair-btn'),
+    pairMsg: document.getElementById('pair-msg'),
+    enableBtn: document.getElementById('enable-btn'),
+    disableBtn: document.getElementById('disable-btn'),
+    testBtn: document.getElementById('test-btn'),
+    manageMsg: document.getElementById('manage-msg'),
+  };
+  var pairPollTimer = null;
+
+  function badge(el, ok, yesText, noText) {
+    el.textContent = ok ? (yesText || 'Yes') : (noText || 'No');
+    el.className = 'badge ' + (ok ? 'yes' : 'no');
+  }
+
+  function setMsg(el, text, kind) {
+    el.textContent = text || '';
+    el.className = 'msg' + (kind ? ' ' + kind : '');
+  }
+
+  async function api(path, opts) {
+    var res = await fetch(path, Object.assign({ headers: { 'Content-Type': 'application/json' } }, opts || {}));
+    var data = null;
+    try { data = await res.json(); } catch (e) {}
+    if (!res.ok) {
+      var detail = (data && (data.detail || data.error)) || ('HTTP ' + res.status);
+      throw new Error(detail);
+    }
+    return data;
+  }
+
+  async function refreshStatus() {
+    try {
+      var s = await api('/api/telegram/status');
+      badge(els.stToken, s.configured);
+      badge(els.stEnabled, s.enabled);
+      badge(els.stPaired, s.paired);
+      els.stOwner.textContent = s.owner || '—';
+      els.stOwner.className = 'badge';
+
+      els.pairBtn.disabled = !s.configured;
+      els.enableBtn.disabled = !s.configured || s.enabled;
+      els.disableBtn.disabled = !s.enabled;
+      els.testBtn.disabled = !s.paired;
+
+      if (s.paired && pairPollTimer) {
+        clearInterval(pairPollTimer);
+        pairPollTimer = null;
+        setMsg(els.pairMsg, 'Paired! You can close this and message the bot any time.', 'ok');
+      } else if (s.pairing_active) {
+        setMsg(els.pairMsg, 'Pairing window open — message your bot on Telegram now.', '');
+      }
+      return s;
+    } catch (e) {
+      setMsg(els.manageMsg, 'Could not reach the server: ' + e.message, 'err');
+      return null;
+    }
+  }
+
+  els.saveTokenBtn.addEventListener('click', async function () {
+    var token = els.tokenInput.value.trim();
+    if (!token) { setMsg(els.tokenMsg, 'Paste a token first.', 'err'); return; }
+    els.saveTokenBtn.disabled = true;
+    setMsg(els.tokenMsg, 'Verifying with Telegram…', '');
+    try {
+      var res = await api('/api/telegram/config', {
+        method: 'POST', body: JSON.stringify({ token: token }),
+      });
+      var uname = res.bot && res.bot.username ? '@' + res.bot.username : 'bot';
+      setMsg(els.tokenMsg, 'Verified ' + uname + ' — saved and encrypted.', 'ok');
+      els.tokenInput.value = '';
+      await refreshStatus();
+    } catch (e) {
+      setMsg(els.tokenMsg, e.message, 'err');
+    } finally {
+      els.saveTokenBtn.disabled = false;
+    }
+  });
+
+  els.pairBtn.addEventListener('click', async function () {
+    els.pairBtn.disabled = true;
+    try {
+      await api('/api/telegram/pair', { method: 'POST' });
+      setMsg(els.pairMsg, 'Pairing window open (5 min) — message your bot on Telegram now.', '');
+      if (pairPollTimer) clearInterval(pairPollTimer);
+      var elapsed = 0;
+      pairPollTimer = setInterval(function () {
+        elapsed += 3;
+        if (elapsed > 320) { clearInterval(pairPollTimer); pairPollTimer = null; return; }
+        refreshStatus();
+      }, 3000);
+    } catch (e) {
+      setMsg(els.pairMsg, e.message, 'err');
+    } finally {
+      els.pairBtn.disabled = false;
+    }
+  });
+
+  els.enableBtn.addEventListener('click', async function () {
+    try {
+      await api('/api/telegram/enable', { method: 'POST' });
+      setMsg(els.manageMsg, 'Enabled.', 'ok');
+      await refreshStatus();
+    } catch (e) { setMsg(els.manageMsg, e.message, 'err'); }
+  });
+
+  els.disableBtn.addEventListener('click', async function () {
+    try {
+      await api('/api/telegram/disable', { method: 'POST' });
+      setMsg(els.manageMsg, 'Disabled — the bot will stop responding.', 'ok');
+      await refreshStatus();
+    } catch (e) { setMsg(els.manageMsg, e.message, 'err'); }
+  });
+
+  els.testBtn.addEventListener('click', async function () {
+    els.testBtn.disabled = true;
+    setMsg(els.manageMsg, 'Sending…', '');
+    try {
+      await api('/api/telegram/test', { method: 'POST' });
+      setMsg(els.manageMsg, 'Test message sent — check Telegram.', 'ok');
+    } catch (e) {
+      setMsg(els.manageMsg, e.message, 'err');
+    } finally {
+      els.testBtn.disabled = false;
+    }
+  });
+
+  refreshStatus();
+})();
+</script>
+</body>
+</html>

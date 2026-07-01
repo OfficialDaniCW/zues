@@ -900,6 +900,13 @@ async def serve_brain(request: Request):
     /api/brain-viz/* routes are owner-scoped on top of that."""
     return serve_html_with_nonce(request, abs_join(BASE_DIR, "static/brain.html"))
 
+@app.get("/telegram")
+async def serve_telegram_settings(request: Request):
+    """Standalone Telegram bridge setup page — auth comes from the global
+    AuthMiddleware (not exempted), and every /api/telegram/* route is
+    require_admin-gated on top of that."""
+    return serve_html_with_nonce(request, abs_join(BASE_DIR, "static/telegram.html"))
+
 @app.get("/api/version")
 async def get_version():
     from core.constants import APP_VERSION

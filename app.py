@@ -648,6 +648,10 @@ app.include_router(setup_research_routes(research_handler, session_manager=sessi
 from routes.history_routes import setup_history_routes
 app.include_router(setup_history_routes(session_manager))
 
+# ChatGPT / Claude.ai conversation-export import (one-time, into the RAG store)
+from routes.history_import_routes import setup_history_import_routes
+app.include_router(setup_history_import_routes())
+
 # Search
 from routes.search_routes import setup_search_routes
 app.include_router(setup_search_routes(config))
@@ -785,6 +789,10 @@ from routes.api_token_routes import setup_api_token_routes
 app.include_router(setup_api_token_routes())
 
 logger.info("Webhook & API token routes initialized")
+
+# Telegram bridge (paired chat gets full agent access — see src/telegram_bridge.py)
+from routes.telegram_routes import setup_telegram_routes
+app.include_router(setup_telegram_routes())
 
 # Notes (Google Keep-style notes/todos)
 from routes.note_routes import setup_note_routes
@@ -968,6 +976,14 @@ async def _startup_event():
         _startup_tasks.append(start_bg_monitor())
     except Exception as _e:
         logger.warning("Failed to start background-job monitor: %s", _e)
+    # Telegram bridge poller — no-op if never configured; resumes automatically
+    # across restarts if the admin already paired a bot (routes/telegram_routes.py
+    # also (re)starts it after config/pairing changes, when a loop is guaranteed).
+    try:
+        from src.telegram_bridge import start_poller as _start_telegram_poller
+        _start_telegram_poller()
+    except Exception as _e:
+        logger.warning("Failed to start Telegram bridge poller: %s", _e)
     # MCP servers can be slow or blocked by local tooling. Connect them after
     # the web server is accepting traffic instead of delaying the whole UI.
     async def _startup_mcp_connections():

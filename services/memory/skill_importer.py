@@ -272,6 +272,37 @@ def fetch_skill_bundle(url: str) -> Tuple[Dict[str, str], ResolvedSource]:
     return files, src
 
 
+def list_repo_top_dirs(url: str) -> Tuple[ResolvedSource, List[str]]:
+    """List top-level directory names under a GitHub repo (or repo subpath) —
+    one API call. Used by bulk skill import to enumerate candidate skill
+    folders (e.g. a curated collection repo with one skill per folder).
+    Callers should attempt ``fetch_skill_bundle`` per name and treat
+    ``SkillImportError`` as "not a skill folder, skip" rather than
+    pre-checking every folder (that would double the GitHub API calls and
+    risk the unauthenticated 60/hr rate limit on any repo with more than a
+    couple dozen entries).
+    """
+    src = parse_skill_source(url)
+    base_path = _safe_relpath(src.path) if src.path else ""
+    api_url = _api_contents_url(src, base_path)
+    ok, reason = check_outbound_url(api_url)
+    if not ok:
+        raise SkillImportError(reason)
+    with httpx.Client(follow_redirects=True, timeout=30.0) as client:
+        r = client.get(api_url, headers={"Accept": "application/vnd.github+json"})
+        if r.status_code >= 400:
+            raise _github_response_error(r)
+        _assert_github_url(str(r.url), context="redirect target")
+        entries = r.json()
+    if not isinstance(entries, list):
+        raise SkillImportError("expected a directory on GitHub")
+    dirs = [
+        ent["name"] for ent in entries
+        if isinstance(ent, dict) and ent.get("type") == "dir" and ent.get("name")
+    ]
+    return src, dirs
+
+
 def pick_skill_md(files: Dict[str, str]) -> Tuple[str, str]:
     for rel, content in files.items():
         if rel.lower().endswith("skill.md"):

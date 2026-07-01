@@ -7,6 +7,7 @@ from services.memory.skill_importer import (
     _assert_github_url,
     _fetch_bytes,
     _list_github_dir,
+    list_repo_top_dirs,
     parse_skill_source,
 )
 
@@ -176,3 +177,42 @@ def test_fetch_bytes_surfaces_github_error_detail(monkeypatch):
     _mock_httpx_client(monkeypatch, _Resp())
     with pytest.raises(SkillImportError, match="GitHub request failed \\(403\\): Forbidden"):
         _fetch_bytes("https://raw.githubusercontent.com/o/r/main/SKILL.md")
+
+
+def test_list_repo_top_dirs_returns_only_directories(monkeypatch):
+    class _Resp:
+        url = "https://api.github.com/repos/o/r/contents?ref=main"
+        status_code = 200
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return [
+                {"name": "theme-factory", "type": "dir"},
+                {"name": "document-skills", "type": "dir"},
+                {"name": "README.md", "type": "file"},
+                {"name": ".github", "type": "dir"},
+            ]
+
+    _mock_httpx_client(monkeypatch, _Resp())
+    src, dirs = list_repo_top_dirs("https://github.com/ComposioHQ/awesome-claude-skills")
+    assert src.owner == "ComposioHQ"
+    assert src.repo == "awesome-claude-skills"
+    assert dirs == ["theme-factory", "document-skills", ".github"]
+
+
+def test_list_repo_top_dirs_rejects_non_directory_listing(monkeypatch):
+    class _Resp:
+        url = "https://api.github.com/repos/o/r/contents/SKILL.md?ref=main"
+        status_code = 200
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"name": "SKILL.md", "type": "file"}
+
+    _mock_httpx_client(monkeypatch, _Resp())
+    with pytest.raises(SkillImportError, match="expected a directory"):
+        list_repo_top_dirs("https://github.com/o/r/blob/main/SKILL.md")

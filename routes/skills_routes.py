@@ -67,6 +67,11 @@ class SkillImportUrlRequest(BaseModel):
     url: str = Field(..., min_length=8, max_length=2000)
 
 
+class SkillBulkImportRequest(BaseModel):
+    url: str = Field(..., min_length=8, max_length=2000)
+    max_skills: int = Field(50, ge=1, le=100)
+
+
 class SkillUpdateRequest(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
@@ -1281,6 +1286,60 @@ def setup_skills_routes(skills_manager: SkillsManager) -> APIRouter:
 
         _fire_skill_added(user)
         return {"ok": True, "skill": entry, "files": len(files)}
+
+    @router.post("/import-bulk-from-repo")
+    async def import_skills_bulk_from_repo(request: Request, body: SkillBulkImportRequest):
+        """Install every SKILL.md-containing top-level folder from a public
+        GitHub repo (e.g. a curated skills collection). One repo-listing call
+        plus one best-effort fetch attempt per top-level folder; folders
+        without a SKILL.md are skipped, not treated as errors."""
+        require_admin(request)
+        user = _owner(request)
+        from services.memory.skill_importer import (
+            SkillImportError,
+            fetch_skill_bundle,
+            list_repo_top_dirs,
+        )
+
+        try:
+            src, dirs = list_repo_top_dirs(body.url.strip())
+        except SkillImportError as e:
+            raise HTTPException(400, str(e)) from e
+        except httpx.HTTPError as e:
+            logger.warning("bulk skill import listing failed: %s", e)
+            raise HTTPException(502, str(e).strip() or "Could not list repository") from e
+
+        limit = max(1, min(int(body.max_skills or 50), 100))
+        base = src.path.strip("/") if src.path else ""
+        results = []
+        for name in dirs[:limit]:
+            rel = f"{base}/{name}" if base else name
+            folder_url = f"https://github.com/{src.owner}/{src.repo}/tree/{src.ref}/{rel}"
+            try:
+                files, _ = fetch_skill_bundle(folder_url)
+                entry = skills_manager.import_bundle_from_files(
+                    files, owner=user, source_url=folder_url,
+                )
+                results.append({"folder": name, "ok": True, "skill": entry.get("name")})
+            except SkillImportError as e:
+                results.append({"folder": name, "ok": False, "skipped": True, "reason": str(e)})
+            except httpx.HTTPError as e:
+                results.append({"folder": name, "ok": False, "skipped": True, "reason": f"fetch failed: {e}"})
+            except Exception as e:
+                logger.warning("bulk skill import failed for folder %r: %s", name, e)
+                results.append({"folder": name, "ok": False, "skipped": True, "reason": "import failed"})
+
+        imported = sum(1 for r in results if r["ok"])
+        if imported:
+            _fire_skill_added(user)
+        return {
+            "ok": True,
+            "repo": f"{src.owner}/{src.repo}",
+            "candidates": len(dirs),
+            "imported": imported,
+            "skipped": len(results) - imported,
+            "results": results,
+        }
 
     @router.post("/add")
     async def add_skill(request: Request, body: SkillAddRequest):

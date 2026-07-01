@@ -272,6 +272,169 @@ def fetch_skill_bundle(url: str) -> Tuple[Dict[str, str], ResolvedSource]:
     return files, src
 
 
+def list_repo_top_dirs(url: str) -> Tuple[ResolvedSource, List[str]]:
+    """List top-level directory names under a GitHub repo (or repo subpath) —
+    one API call. Used by bulk skill import to enumerate candidate skill
+    folders (e.g. a curated collection repo with one skill per folder).
+    Callers should attempt ``fetch_skill_bundle`` per name and treat
+    ``SkillImportError`` as "not a skill folder, skip" rather than
+    pre-checking every folder (that would double the GitHub API calls and
+    risk the unauthenticated 60/hr rate limit on any repo with more than a
+    couple dozen entries).
+    """
+    src = parse_skill_source(url)
+    base_path = _safe_relpath(src.path) if src.path else ""
+    api_url = _api_contents_url(src, base_path)
+    ok, reason = check_outbound_url(api_url)
+    if not ok:
+        raise SkillImportError(reason)
+    with httpx.Client(follow_redirects=True, timeout=30.0) as client:
+        r = client.get(api_url, headers={"Accept": "application/vnd.github+json"})
+        if r.status_code >= 400:
+            raise _github_response_error(r)
+        _assert_github_url(str(r.url), context="redirect target")
+        entries = r.json()
+    if not isinstance(entries, list):
+        raise SkillImportError("expected a directory on GitHub")
+    dirs = [
+        ent["name"] for ent in entries
+        if isinstance(ent, dict) and ent.get("type") == "dir" and ent.get("name")
+    ]
+    return src, dirs
+
+
+def list_repo_skill_dirs(url: str) -> Tuple[ResolvedSource, List[str]]:
+    """Find every directory containing a SKILL.md anywhere in a GitHub repo
+    (or repo subpath) — one recursive git-trees API call. Unlike
+    ``list_repo_top_dirs`` (one skill per top-level folder only), this
+    handles arbitrary nesting — a plain collection repo (``<name>/SKILL.md``)
+    and a deep plugin/marketplace layout (e.g.
+    ``category/plugin/skills/<name>/SKILL.md``) both work the same way.
+    Returns directory paths relative to the repo root (not to ``src.path``).
+    """
+    src = parse_skill_source(url)
+    base_path = _safe_relpath(src.path) if src.path else ""
+    api_url = (
+        f"https://api.github.com/repos/{src.owner}/{src.repo}"
+        f"/git/trees/{quote(src.ref, safe='')}?recursive=1"
+    )
+    ok, reason = check_outbound_url(api_url)
+    if not ok:
+        raise SkillImportError(reason)
+    with httpx.Client(follow_redirects=True, timeout=30.0) as client:
+        r = client.get(api_url, headers={"Accept": "application/vnd.github+json"})
+        if r.status_code >= 400:
+            raise _github_response_error(r)
+        _assert_github_url(str(r.url), context="redirect target")
+        data = r.json()
+    if not isinstance(data, dict) or not isinstance(data.get("tree"), list):
+        raise SkillImportError("expected a repository tree from GitHub")
+    if data.get("truncated"):
+        logger.warning(
+            "skill listing truncated for %s/%s — very large repo, results may be incomplete",
+            src.owner, src.repo,
+        )
+
+    dirs: List[str] = []
+    for ent in data["tree"]:
+        if not isinstance(ent, dict) or ent.get("type") != "blob":
+            continue
+        path = ent.get("path") or ""
+        is_skill_md = path == "SKILL.md" or path.endswith("/SKILL.md")
+        if not is_skill_md:
+            continue
+        if base_path and not (path == f"{base_path}/SKILL.md" or path.startswith(f"{base_path}/")):
+            continue
+        skill_dir = path.rsplit("/", 1)[0] if "/" in path else ""
+        dirs.append(skill_dir)
+    return src, dirs
+
+
+def extract_skill_bundles_from_zip(
+    data: bytes, *, max_skills: int = 500,
+) -> List[Tuple[str, Dict[str, str]]]:
+    """Parse an uploaded .zip (e.g. a GitHub "Download ZIP" export) and
+    return (label, files) for every real skill found — no GitHub API calls,
+    so no rate limit, which matters for a repo with hundreds of skills.
+
+    Two things this deliberately filters out, found by inspecting a real
+    export (alirezarezvani/claude-skills):
+      - Anything under a dot-prefixed top-level directory. Multi-agent skill
+        repos often ship a mirror tree per tool (``.gemini/``, ``.codex/``,
+        ``.hermes/``, ``.vibe/``, ...); in that export those "SKILL.md"
+        files were broken symlinks that unzip to a bare relative-path string
+        instead of real content, and even when valid they're just a copy of
+        the canonical skill living under a normal top-level category dir.
+      - Any SKILL.md whose content doesn't start with YAML frontmatter
+        (``---``) — catches stray fixture/example files (e.g. a
+        skill-tester's sample asset) that happen to be named SKILL.md.
+    """
+    import io
+    import zipfile
+
+    try:
+        zf = zipfile.ZipFile(io.BytesIO(data))
+    except zipfile.BadZipFile as e:
+        raise SkillImportError("Uploaded file is not a valid .zip") from e
+
+    names = [n for n in zf.namelist() if not n.endswith("/")]
+
+    # GitHub zip exports wrap everything in "<repo>-<branch>/" — strip that
+    # single common root so returned labels are repo-relative.
+    roots = {n.split("/", 1)[0] for n in names if "/" in n}
+    root = next(iter(roots)) + "/" if len(roots) == 1 else ""
+
+    def rel(n: str) -> str:
+        return n[len(root):] if root and n.startswith(root) else n
+
+    skill_entries = []
+    for full_name in names:
+        r = rel(full_name)
+        if not r.endswith("SKILL.md"):
+            continue
+        if r.split("/", 1)[0].startswith("."):
+            continue
+        skill_entries.append((full_name, r))
+
+    bundles: List[Tuple[str, Dict[str, str]]] = []
+    for full_name, r in skill_entries:
+        if len(bundles) >= max_skills:
+            break
+        try:
+            content = zf.read(full_name).decode("utf-8")
+        except (UnicodeDecodeError, KeyError):
+            continue
+        if not content.lstrip().startswith("---"):
+            continue
+
+        skill_dir = r.rsplit("/", 1)[0] if "/" in r else ""
+        prefix = f"{root}{skill_dir}/" if skill_dir else root
+
+        files: Dict[str, str] = {}
+        total_bytes = 0
+        for sib_name in names:
+            if not sib_name.startswith(prefix):
+                continue
+            sib_rel = sib_name[len(prefix):]
+            if not sib_rel or not _is_text_file(sib_rel):
+                continue
+            try:
+                text = zf.read(sib_name).decode("utf-8")
+            except (UnicodeDecodeError, KeyError):
+                continue
+            size = len(text.encode("utf-8"))
+            if size > MAX_FILE_BYTES or total_bytes + size > MAX_TOTAL_BYTES:
+                continue
+            files[sib_rel] = text
+            total_bytes += size
+            if len(files) >= MAX_FILES:
+                break
+        if files:
+            bundles.append((skill_dir or r, files))
+
+    return bundles
+
+
 def pick_skill_md(files: Dict[str, str]) -> Tuple[str, str]:
     for rel, content in files.items():
         if rel.lower().endswith("skill.md"):

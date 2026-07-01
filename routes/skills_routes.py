@@ -13,7 +13,7 @@ from typing import List, Optional
 
 import httpx
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field
 
 from services.memory.skills import SkillsManager
@@ -65,6 +65,11 @@ class SkillAddRequest(BaseModel):
 
 class SkillImportUrlRequest(BaseModel):
     url: str = Field(..., min_length=8, max_length=2000)
+
+
+class SkillBulkImportRequest(BaseModel):
+    url: str = Field(..., min_length=8, max_length=2000)
+    max_skills: int = Field(50, ge=1, le=100)
 
 
 class SkillUpdateRequest(BaseModel):
@@ -1281,6 +1286,116 @@ def setup_skills_routes(skills_manager: SkillsManager) -> APIRouter:
 
         _fire_skill_added(user)
         return {"ok": True, "skill": entry, "files": len(files)}
+
+    @router.post("/import-bulk-from-repo")
+    async def import_skills_bulk_from_repo(request: Request, body: SkillBulkImportRequest):
+        """Install every SKILL.md found anywhere in a public GitHub repo (or
+        repo subpath) — a flat "one skill per top-level folder" collection
+        and a deeply nested plugin/marketplace layout both work, since the
+        listing walks the whole tree in one call. Folders that fail to fetch
+        are skipped and reported, not treated as a whole-request error."""
+        require_admin(request)
+        user = _owner(request)
+        from services.memory.skill_importer import (
+            SkillImportError,
+            fetch_skill_bundle,
+            list_repo_skill_dirs,
+        )
+
+        try:
+            src, dirs = list_repo_skill_dirs(body.url.strip())
+        except SkillImportError as e:
+            raise HTTPException(400, str(e)) from e
+        except httpx.HTTPError as e:
+            logger.warning("bulk skill import listing failed: %s", e)
+            raise HTTPException(502, str(e).strip() or "Could not list repository") from e
+
+        if not dirs:
+            return {
+                "ok": True, "repo": f"{src.owner}/{src.repo}",
+                "candidates": 0, "imported": 0, "skipped": 0, "results": [],
+            }
+
+        limit = max(1, min(int(body.max_skills or 50), 100))
+        results = []
+        for rel in dirs[:limit]:
+            folder_url = (
+                f"https://github.com/{src.owner}/{src.repo}/tree/{src.ref}/{rel}" if rel
+                else f"https://github.com/{src.owner}/{src.repo}/tree/{src.ref}"
+            )
+            label = rel or src.repo
+            try:
+                files, _ = fetch_skill_bundle(folder_url)
+                entry = skills_manager.import_bundle_from_files(
+                    files, owner=user, source_url=folder_url,
+                )
+                results.append({"folder": label, "ok": True, "skill": entry.get("name")})
+            except SkillImportError as e:
+                results.append({"folder": label, "ok": False, "skipped": True, "reason": str(e)})
+            except httpx.HTTPError as e:
+                results.append({"folder": label, "ok": False, "skipped": True, "reason": f"fetch failed: {e}"})
+            except Exception as e:
+                logger.warning("bulk skill import failed for folder %r: %s", label, e)
+                results.append({"folder": label, "ok": False, "skipped": True, "reason": "import failed"})
+
+        imported = sum(1 for r in results if r["ok"])
+        if imported:
+            _fire_skill_added(user)
+        return {
+            "ok": True,
+            "repo": f"{src.owner}/{src.repo}",
+            "candidates": len(dirs),
+            "imported": imported,
+            "skipped": len(results) - imported,
+            "results": results,
+        }
+
+    @router.post("/import-bulk-from-zip")
+    async def import_skills_bulk_from_zip(
+        request: Request, file: UploadFile = File(...), max_skills: int = 500,
+    ):
+        """Same as import-bulk-from-repo but from an uploaded .zip (e.g. a
+        GitHub "Download ZIP" export) instead of the GitHub API — no rate
+        limit, so this is the way to go for a repo with hundreds of skills."""
+        require_admin(request)
+        user = _owner(request)
+        from services.memory.skill_importer import SkillImportError, extract_skill_bundles_from_zip
+
+        raw = await file.read()
+        if not raw:
+            raise HTTPException(400, "Uploaded file is empty")
+
+        try:
+            bundles = extract_skill_bundles_from_zip(
+                raw, max_skills=max(1, min(int(max_skills or 500), 1000)),
+            )
+        except SkillImportError as e:
+            raise HTTPException(400, str(e)) from e
+
+        results = []
+        for label, files in bundles:
+            try:
+                entry = skills_manager.import_bundle_from_files(
+                    files, owner=user, source_url=f"zip:{file.filename}:{label}",
+                )
+                results.append({"folder": label, "ok": True, "skill": entry.get("name")})
+            except SkillImportError as e:
+                results.append({"folder": label, "ok": False, "skipped": True, "reason": str(e)})
+            except Exception as e:
+                logger.warning("zip skill import failed for %r: %s", label, e)
+                results.append({"folder": label, "ok": False, "skipped": True, "reason": "import failed"})
+
+        imported = sum(1 for r in results if r["ok"])
+        if imported:
+            _fire_skill_added(user)
+        return {
+            "ok": True,
+            "source": file.filename,
+            "candidates": len(bundles),
+            "imported": imported,
+            "skipped": len(results) - imported,
+            "results": results,
+        }
 
     @router.post("/add")
     async def add_skill(request: Request, body: SkillAddRequest):

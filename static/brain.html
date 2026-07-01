@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, interactive-widget=resizes-visual">
+<title>Zeus — Brain</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M16 4L16 22L6 22Z' fill='%23e06c75'/%3E%3Cpath d='M16 8L16 22L24 22Z' fill='%23e06c75' opacity='0.6'/%3E%3C/svg%3E">
+<script nonce="{{CSP_NONCE}}">
+// Pick up the user's chosen Zeus theme (base palette only — this page is
+// self-contained and doesn't pull in the rest of static/style.css) so the
+// chart chrome matches the app instead of looking bolted on.
+(function () {
+  try {
+    var t = JSON.parse(localStorage.getItem('odysseus-theme'));
+    var s = document.documentElement.style;
+    if (t && t.colors) {
+      var c = t.colors;
+      if (c.bg) s.setProperty('--zeus-bg', c.bg);
+      if (c.fg) s.setProperty('--zeus-fg', c.fg);
+      if (c.panel) s.setProperty('--zeus-panel', c.panel);
+      if (c.border) s.setProperty('--zeus-border', c.border);
+    }
+    if (t && t.name === 'light') document.documentElement.classList.add('light');
+  } catch (e) {}
+})();
+</script>
+<style>
+  :root {
+    --zeus-bg: #282c34;
+    --zeus-fg: #9cdef2;
+    --zeus-panel: #111;
+    --zeus-border: #355a66;
+
+    /* Chart surface/ink follow the Zeus theme */
+    --surface-1: var(--zeus-panel);
+    --page-plane: var(--zeus-bg);
+    --text-primary: var(--zeus-fg);
+    --text-secondary: color-mix(in srgb, var(--zeus-fg) 70%, var(--zeus-panel));
+    --text-muted: color-mix(in srgb, var(--zeus-fg) 45%, var(--zeus-panel));
+    --gridline: var(--zeus-border);
+    --border: var(--zeus-border);
+
+    /* Categorical data colors — the validated dataviz palette, dark-mode
+       steps (fixed slot order = the CVD-safety mechanism; never reorder
+       or generate a new hue per category). */
+    --series-1: #3987e5; /* memory */
+    --series-2: #199e70; /* personal_document */
+    --series-3: #c98500; /* imported:chatgpt */
+    --series-4: #9085e9; /* imported:claude */
+    --series-5: #e66767; /* imported (other) */
+    --series-6: #d55181; /* skill */
+    --series-7: #d95926; /* other */
+  }
+  :root.light {
+    --series-1: #2a78d6;
+    --series-2: #1baf7a;
+    --series-3: #eda100;
+    --series-4: #4a3aa7;
+    --series-5: #e34948;
+    --series-6: #e87ba4;
+    --series-7: #eb6834;
+    --text-secondary: color-mix(in srgb, var(--zeus-fg) 75%, white);
+    --text-muted: color-mix(in srgb, var(--zeus-fg) 50%, white);
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not(.light) { --zeus-bg: #f5f5f5; --zeus-fg: #2b2b2b; --zeus-panel: #fff; --zeus-border: #bbb; }
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--page-plane);
+    color: var(--text-primary);
+    font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+    overflow: hidden;
+  }
+
+  #viz-root { position: relative; width: 100vw; height: 100vh; }
+  canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; }
+  canvas.dragging { cursor: grabbing; }
+
+  .topbar {
+    position: absolute; top: 16px; left: 16px; right: 16px;
+    display: flex; align-items: center; gap: 10px;
+    z-index: 5;
+  }
+  .brand { font-weight: 600; color: var(--text-primary); margin-right: 4px; white-space: nowrap; }
+  .search-wrap { position: relative; flex: 0 1 360px; }
+  #search {
+    width: 100%; padding: 9px 12px; border-radius: 8px;
+    border: 1px solid var(--border); background: var(--surface-1);
+    color: var(--text-primary); font-size: 14px; outline: none;
+  }
+  #search:focus { border-color: var(--series-1); }
+  .count {
+    color: var(--text-muted); font-size: 12px; white-space: nowrap; margin-left: auto;
+  }
+
+  .legend {
+    display: none; /* shown by JS once there are >= 2 categories to key */
+    position: absolute; left: 16px; bottom: 16px; z-index: 5;
+    background: color-mix(in srgb, var(--surface-1) 92%, transparent);
+    border: 1px solid var(--border); border-radius: 10px;
+    padding: 10px 12px; font-size: 12px; max-width: 220px;
+  }
+  .legend-row { display: flex; align-items: center; gap: 8px; padding: 3px 0; }
+  .legend-swatch { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+  .legend-label { color: var(--text-secondary); }
+
+  #tooltip {
+    position: absolute; z-index: 10; pointer-events: none;
+    max-width: 320px; padding: 8px 10px; border-radius: 8px;
+    background: var(--surface-1); border: 1px solid var(--border);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+    font-size: 12.5px; display: none; line-height: 1.45;
+  }
+  #tooltip .tt-value { color: var(--text-primary); font-weight: 600; margin-bottom: 2px; }
+  #tooltip .tt-label { color: var(--text-secondary); }
+
+  #status {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    color: var(--text-muted); font-size: 14px; text-align: center; padding: 24px; z-index: 4;
+  }
+  #status.hidden { display: none; }
+  #status a { color: var(--series-1); }
+</style>
+</head>
+<body>
+  <div id="viz-root">
+    <canvas id="viz-canvas"></canvas>
+    <div class="topbar">
+      <span class="brand">Brain</span>
+      <div class="search-wrap"><input id="search" type="text" placeholder="Search your brain…" autocomplete="off"></div>
+      <span class="count" id="count"></span>
+    </div>
+    <div class="legend" id="legend"></div>
+    <div id="tooltip"><div class="tt-value" id="tt-value"></div><div class="tt-label" id="tt-label"></div></div>
+    <div id="status"></div>
+  </div>
+  <script src="/static/js/brain-viz.js"></script>
+</body>
+</html>

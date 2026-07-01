@@ -34,3 +34,10 @@ PyMuPDF
 # [all]/Azure/audio extras (cloud + heavy). Pinned to a release >30 days old per
 # the dependency-age discussion in issue #485.
 markitdown[docx,pptx,xlsx,xls]==0.1.6
+
+# Brain visualizer (PCA -> t-SNE projection of stored embeddings for the
+# /brain scatter view). scikit-learn is a well-known, actively maintained
+# dependency; numpy is already a core dep via the RAG/embedding stack.
+# Optional and lazy-imported via src/brain_viz.py — without it /brain shows
+# a friendly "install to enable" message instead of erroring.
+scikit-learn

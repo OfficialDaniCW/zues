@@ -247,35 +247,11 @@ def setup_session_routes(session_manager: SessionManager, config: dict, webhook_
         except Exception:
             pass
         user_sessions = session_manager.get_sessions_for_user(user)
-        # Fetch folder info from DB for each session
         db = SessionLocal()
         try:
-            folder_map = {}
-            token_map = {}
-            important_map = {}
-            created_map = {}
-            updated_map = {}
-            last_msg_map = {}
-            mode_map = {}
-            msg_count_map = {}
-            q = db.query(DbSession.id, DbSession.folder, DbSession.total_input_tokens, DbSession.total_output_tokens, DbSession.is_important, DbSession.created_at, DbSession.updated_at, DbSession.last_message_at, DbSession.mode, DbSession.message_count).filter(DbSession.archived == False)
+            q = db.query(DbSession).filter(DbSession.archived == False)
             q = owner_filter(q, DbSession, user)
-            rows = q.all()
-            for row in rows:
-                folder_map[row.id] = row.folder
-                token_map[row.id] = (row.total_input_tokens or 0) + (row.total_output_tokens or 0)
-                important_map[row.id] = row.is_important or False
-                created_map[row.id] = row.created_at.isoformat() if row.created_at else None
-                updated_map[row.id] = row.updated_at.isoformat() if row.updated_at else None
-                # Fall back to updated_at then created_at so sessions that
-                # predate the column (or have no messages) still sort sanely.
-                last_msg_map[row.id] = (
-                    row.last_message_at.isoformat() if row.last_message_at
-                    else (row.updated_at.isoformat() if row.updated_at
-                          else (row.created_at.isoformat() if row.created_at else None))
-                )
-                mode_map[row.id] = row.mode
-                msg_count_map[row.id] = row.message_count or 0
+            db_sessions = q.all()
             # Sessions with active documents that have content
             from sqlalchemy import func
             doc_session_ids = set(
@@ -297,22 +273,38 @@ def setup_session_routes(session_manager: SessionManager, config: dict, webhook_
         finally:
             db.close()
 
-        sessions = [{"id": s.id, "name": s.name, "model": _public_model(s.name, s.model),
-                     "endpoint_url": s.endpoint_url, "rag": s.rag,
-                     "archived": s.archived, "folder": folder_map.get(s.id),
-                     "total_tokens": token_map.get(s.id, 0),
-                     "is_important": important_map.get(s.id, False),
-                     "created_at": created_map.get(s.id),
-                     "updated_at": updated_map.get(s.id),
-                     "last_message_at": last_msg_map.get(s.id),
-                     "has_documents": s.id in doc_session_ids,
-                     "has_images": s.id in img_session_ids,
-                     "mode": mode_map.get(s.id),
-                     "message_count": msg_count_map.get(s.id, 0)}
-                    for s in user_sessions.values()
-                    if not s.archived
-                    and (s.name or "").strip() not in ("Nobody", "Incognito")
-                    and (s.name or "").strip() not in _HIDDEN_SYSTEM_SESSION_NAMES]
+        sessions = []
+        for db_sess in db_sessions:
+            name = (db_sess.name or "").strip()
+            if name in ("Nobody", "Incognito") or name in _HIDDEN_SYSTEM_SESSION_NAMES:
+                continue
+            cached = user_sessions.get(db_sess.id)
+            model = cached.model if cached else (db_sess.model or "")
+            endpoint_url = cached.endpoint_url if cached else (db_sess.endpoint_url or "")
+            rag = cached.rag if cached else bool(db_sess.rag)
+            last_message_at = (
+                db_sess.last_message_at.isoformat() if db_sess.last_message_at
+                else (db_sess.updated_at.isoformat() if db_sess.updated_at
+                      else (db_sess.created_at.isoformat() if db_sess.created_at else None))
+            )
+            sessions.append({
+                "id": db_sess.id,
+                "name": db_sess.name,
+                "model": _public_model(db_sess.name, model),
+                "endpoint_url": endpoint_url,
+                "rag": rag,
+                "archived": bool(db_sess.archived),
+                "folder": db_sess.folder,
+                "total_tokens": (db_sess.total_input_tokens or 0) + (db_sess.total_output_tokens or 0),
+                "is_important": bool(db_sess.is_important),
+                "created_at": db_sess.created_at.isoformat() if db_sess.created_at else None,
+                "updated_at": db_sess.updated_at.isoformat() if db_sess.updated_at else None,
+                "last_message_at": last_message_at,
+                "has_documents": db_sess.id in doc_session_ids,
+                "has_images": db_sess.id in img_session_ids,
+                "mode": db_sess.mode,
+                "message_count": db_sess.message_count or 0,
+            })
 
         return sessions
     

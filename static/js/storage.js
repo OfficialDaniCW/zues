@@ -3,8 +3,8 @@
 
 // ── Key constants ──
 export const KEYS = {
-  THEME: 'odysseus-theme',
-  TOGGLES: 'odysseus-toggles',
+  THEME: 'Zeus-theme',
+  TOGGLES: 'Zeus-toggles',
   SIDEBAR_COLLAPSED: 'sidebar-collapsed',
   SIDEBAR_WIDTH: 'sidebar-width',
   SIDEBAR_SIDE: 'sidebar-side',
@@ -13,19 +13,19 @@ export const KEYS = {
   COMPARE_CHAT: 'compare-continue-chat',
   COMPARE_BLIND: 'compare-blind',
   COMPARE_RANDOM: 'compare-randomize',
-  MODELS_EXPANDED: 'odysseus-model-expanded',
-  MODEL_ENDPOINTS: 'odysseus-model-endpoints',
-  MODEL_SELECTED: 'odysseus-selected-model',
-  SORT_ORDER: 'odysseus-sessions-sort',
-  CHAT_SEARCH_SCOPE: 'odysseus-search-scope',
-  INCOGNITO: 'odysseus-incognito',
-  RAG_ACTIVE: 'odysseus-rag-active',
-  MCP_ACTIVE: 'odysseus-mcp-active',
+  MODELS_EXPANDED: 'Zeus-model-expanded',
+  MODEL_ENDPOINTS: 'Zeus-model-endpoints',
+  MODEL_SELECTED: 'Zeus-selected-model',
+  SORT_ORDER: 'Zeus-sessions-sort',
+  CHAT_SEARCH_SCOPE: 'Zeus-search-scope',
+  INCOGNITO: 'Zeus-incognito',
+  RAG_ACTIVE: 'Zeus-rag-active',
+  MCP_ACTIVE: 'Zeus-mcp-active',
   SECTION_ORDER: 'sidebar-section-order',
   ADMIN_LAST_TAB: 'admin-last-tab',
-  DENSITY: 'odysseus-density',
-  UI_SCALE: 'odysseus-ui-scale',
-  WORKSPACE: 'odysseus-workspace'
+  DENSITY: 'Zeus-density',
+  UI_SCALE: 'Zeus-ui-scale',
+  WORKSPACE: 'Zeus-workspace'
 };
 
 /**

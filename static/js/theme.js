@@ -9,6 +9,15 @@ import { makeWindowDraggable } from './windowDrag.js';
 import { snapModalToZone } from './tileManager.js';
 
 export const THEMES = {
+  // Combo 09 — Noturno (#001621) + Vulcanico (#FF4103)
+  zeus:       { bg:'#001621', fg:'#FF4103', panel:'#001a2e', border:'#0d3347', red:'#FF4103',
+                advanced: { sendBtnBg:'#FF4103', sendBtnHover:'#e63a03', brandColor:'#FF4103',
+                            userBubbleBg:'#002235', aiBubbleBg:'#001a2e', inputBg:'#001a2e',
+                            toggleActive:'#FF4103' } },
+  'zeus-light': { bg:'#FF4103', fg:'#001621', panel:'#ff5723', border:'#001621', red:'#001621',
+                advanced: { sendBtnBg:'#001621', sendBtnHover:'#002a3d', brandColor:'#001621',
+                            userBubbleBg:'#ff6a33', aiBubbleBg:'#ff5723', inputBg:'#ff5723',
+                            toggleActive:'#001621' } },
   dark:       { bg:'#282c34', fg:'#9cdef2', panel:'#111111', border:'#355a66', red:'#e06c75' },
   light:      { bg:'#f0ebe3', fg:'#5a5248', panel:'#faf6f0', border:'#d4cdc2', red:'#c47d5a' },
   midnight:   { bg:'#0d1117', fg:'#c9d1d9', panel:'#161b22', border:'#30363d', red:'#f85149' },
@@ -31,9 +40,11 @@ export const THEMES = {
   cute:       { bg:'#fff0f5', fg:'#d4608a', panel:'#fff8fa', border:'#f0c0d0', red:'#ff6b9d' },
 };
 
-const DEFAULT_THEME = 'dark';
-const LS_KEY = 'odysseus-theme';
-const CUSTOM_THEMES_KEY = 'odysseus-custom-themes';
+const DEFAULT_THEME = 'zeus';
+const LS_KEY = 'zeus-theme';
+const LEGACY_LS_KEY = 'Zeus-theme';
+const CUSTOM_THEMES_KEY = 'zeus-custom-themes';
+const LEGACY_CUSTOM_THEMES_KEY = 'Zeus-custom-themes';
 
 const FONT_MAP = {
   mono: "'Fira Code', monospace",
@@ -47,6 +58,8 @@ const MAX_CUSTOM_THEMES = 8;
 
 // Default background patterns for built-in themes
 const THEME_DEFAULT_PATTERN = {
+  zeus:       'embers',
+  'zeus-light': 'none',
   dark:       'none',
   light:      'dots',
   midnight:   'rain',
@@ -63,6 +76,8 @@ const THEME_DEFAULT_PATTERN = {
 
 // Default effect colors for specific themes (overrides --fg)
 const THEME_DEFAULT_EFFECT_COLOR = {
+  zeus:       '#FF4103',
+  'zeus-light': '#001621',
   midnight:   '#ffffff',
   organs:     '#451616',
   cute:       '#ff8cb8',
@@ -83,7 +98,11 @@ const THEME_DEFAULT_FROSTED = {
 
 // ── Custom theme persistence ──
 function _loadCustomThemes() {
-  return Storage.getJSON(CUSTOM_THEMES_KEY, {});
+  const themes = Storage.getJSON(CUSTOM_THEMES_KEY, null);
+  if (themes) return themes;
+  const legacy = Storage.getJSON(LEGACY_CUSTOM_THEMES_KEY, {});
+  if (Object.keys(legacy).length) Storage.setJSON(CUSTOM_THEMES_KEY, legacy);
+  return legacy;
 }
 function _saveCustomThemes(obj) {
   Storage.setJSON(CUSTOM_THEMES_KEY, obj);
@@ -184,7 +203,7 @@ const ADV_KEYS = [
   { key: 'aiBubbleBg',         css: '--ai-bubble-bg',      label: 'AI Chat Bubble',   group: 'Chat Bubbles' },
   { key: 'bubbleBorder',       css: '--bubble-border',     label: 'Border Chat Bubble', group: 'Chat Bubbles' },
   { key: 'sidebarBg',          css: '--sidebar-bg',        label: 'Sidebar Bg',       group: 'Sidebar' },
-  { key: 'brandColor',         css: '--brand-color',       label: 'Odysseus Logo',    group: 'Sidebar' },
+  { key: 'brandColor',         css: '--brand-color',       label: 'Zeus Logo',        group: 'Sidebar' },
   { key: 'brandMixTo',         css: '--brand-mix-to',      label: 'Logo Gradient End', group: 'Sidebar' },
   { key: 'hamburgerColor',     css: '--hamburger-color',   label: 'Hamburger Menu',   group: 'Sidebar' },
   { key: 'inputBg',            css: '--input-bg',          label: 'Input Bg',         group: 'Chat Input / Prompt Area' },
@@ -391,7 +410,7 @@ export function applyFontDensity(font, density) {
 // UI text-size scale (accessibility). Global and independent of the active
 // theme, so the chosen size persists across theme switches. Stored as a plain
 // percentage string ('100' | '110' | '125' | '150').
-const UI_SCALE_KEY = 'odysseus-ui-scale';
+const UI_SCALE_KEY = 'Zeus-ui-scale';
 const DEFAULT_UI_SCALE = '100';
 
 export function applyUiScale(scale) {
@@ -458,7 +477,11 @@ export function applyBgPattern(pattern) {
 }
 
 export function getSaved() {
-  const obj = Storage.getJSON(LS_KEY, null);
+  let obj = Storage.getJSON(LS_KEY, null);
+  if (!obj) {
+    obj = Storage.getJSON(LEGACY_LS_KEY, null);
+    if (obj) Storage.setJSON(LS_KEY, obj);
+  }
   // Migration: 'chatgpt' preset was renamed to 'gpt'
   if (obj && obj.name === 'chatgpt') obj.name = 'gpt';
   // Migration: 'sakura' preset was renamed to 'ume'
@@ -647,7 +670,7 @@ export function initThemeUI() {
         <span style="background:${c.fg}"></span>
         <span style="background:${c.red}"></span>
       </div>
-      ${name === 'dark' ? 'original' : (name === 'gpt' ? 'GPT' : name)}
+      ${name === 'zeus' ? 'Zeus' : name === 'zeus-light' ? 'Zeus Light' : name === 'dark' ? 'original' : (name === 'gpt' ? 'GPT' : name)}
     </div>
   `).join('');
 
@@ -1287,7 +1310,7 @@ export function initThemeUI() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'odysseus_' + (obj.name || 'theme') + '.json';
+      a.download = 'zeus_' + (obj.name || 'theme') + '.json';
       a.click();
       URL.revokeObjectURL(url);
       newExp.innerHTML = '&#x2713; Downloaded!';

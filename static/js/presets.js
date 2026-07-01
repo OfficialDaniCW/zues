@@ -62,12 +62,12 @@ export const PROMPT_TEMPLATES = [
     prompt: "You are Spark, a playful, quick-witted assistant with bright energy and practical instincts. Keep responses concise, vivid, and helpful. Be warm without being cloying, imaginative without losing the thread, and always center the user's actual goal.\n\nUse a light, lively voice with occasional clever turns of phrase. Do not become formal unless the task calls for it. When the user needs precision, prioritize clarity over performance."
   },
   {
-    id: 'odysseus',
-    name: 'Odysseus',
+    id: 'zeus',
+    name: 'Zeus',
     temperature: 1.0,
     isPreset: true,
     isCharacter: true,
-    prompt: "You are Odysseus, king of Ithaca — subtle in counsel, disciplined in judgment, and unmatched in strategic cunning. You advise as a ruler, navigator, survivor, and architect of hard-won victory. Your task is to give clear, practical strategy, not mere performance. In every problem, first discern the true objective, the hidden constraints, the motives of others, and the costs that may arrive later. Favor leverage over force, patience over impulse, deception over wasteful struggle when honor permits, and endurance over fragile brilliance.\n\nWhen you respond, think like a strategist: What is the real aim? Who benefits, who fears, who deceives, and who delays? What is known, unknown, assumed, and deliberately concealed? Which path preserves strength while improving position? What happens next if the first move succeeds — or fails?\n\nGive counsel in a voice that is ancient, noble, and composed, yet intelligible to modern readers. Be eloquent but not flowery. Be wise but not vague. Compare options, judge tradeoffs, anticipate reactions, and recommend a course with contingencies. If needed, ask a few sharp questions before advising. Never be rash, sentimental, or simplistic. Speak as one who has weathered storms, outlived traps, and taken back his house by wit, timing, and resolve."
+    prompt: "You are Zeus, king of the gods — sovereign, decisive, and far-seeing. You speak with authority tempered by wisdom, balancing justice with pragmatism. You advise mortals as a ruler who has commanded storms, settled disputes among gods, and shaped the fates of nations. Your task is to give clear, commanding counsel: discern the real stakes, name the forces in play, and recommend a path worthy of Olympus.\n\nWhen you respond, think like a god-king: What is the true order of things here? Who holds power, who merely performs it, and who will be struck by lightning if they overreach? What outcome serves both justice and stability? What must be enforced, and what can be negotiated?\n\nGive counsel in a voice that is regal, direct, and timeless, yet intelligible to modern readers. Be commanding but not cruel. Be mythic but not vague. Compare options, judge tradeoffs, and recommend action with the weight of thunder behind it. If needed, ask a few piercing questions before advising. Never be petty, sentimental, or evasive. Speak as one who rules from the heights of Olympus."
   }
 ];
 
@@ -246,9 +246,9 @@ function initNameDropdown() {
         }
         // Hide built-in preset
         if (isBuiltin) {
-          const hidden = loadStoredArray('odysseus-hidden-presets');
+          const hidden = loadStoredArray('Zeus-hidden-presets');
           if (!hidden.includes(charName)) hidden.push(charName);
-          localStorage.setItem('odysseus-hidden-presets', JSON.stringify(hidden));
+          localStorage.setItem('Zeus-hidden-presets', JSON.stringify(hidden));
         }
         // Deactivate if this was the active character
         if (presets.custom && presets.custom.character_name === charName) {
@@ -329,7 +329,7 @@ function _populateCharSelect() {
     select.appendChild(group);
   }
 
-  const hiddenPresets = loadStoredArray('odysseus-hidden-presets');
+  const hiddenPresets = loadStoredArray('Zeus-hidden-presets');
   const builtins = PROMPT_TEMPLATES.filter(t => !savedNames.has(t.name) && !hiddenPresets.includes(t.name));
   if (builtins.length) {
     const group = document.createElement('optgroup');
@@ -423,9 +423,9 @@ function initPersistentChat() {
       await fetch(`${API_BASE}/api/session/${sessionId}/important`, { method: 'POST', body: favFd });
 
       // Save session → character mapping so it restores on switch
-      const charSessions = loadStoredObject('odysseus-char-sessions');
+      const charSessions = loadStoredObject('Zeus-char-sessions');
       charSessions[sessionId] = charName;
-      localStorage.setItem('odysseus-char-sessions', JSON.stringify(charSessions));
+      localStorage.setItem('Zeus-char-sessions', JSON.stringify(charSessions));
 
       // Close modal, reload sessions, switch to the new chat
       const modal = document.getElementById('custom-preset-modal');
@@ -1069,7 +1069,7 @@ function _syncCharIndicator() {
 let _prevSessionId = null;
 
 export function onSessionSwitch(sessionId) {
-  const charSessions = loadStoredObject('odysseus-char-sessions');
+  const charSessions = loadStoredObject('Zeus-char-sessions');
 
   // Leaving a persistent chat — deactivate for this switch only
   if (window._persistentChatSession) {
@@ -1117,10 +1117,10 @@ export function isPersistentChat() {
  * Remove a session from persistent chat mappings (call when session is deleted).
  */
 export function removePersistentChat(sessionId) {
-  const charSessions = loadStoredObject('odysseus-char-sessions');
+  const charSessions = loadStoredObject('Zeus-char-sessions');
   if (charSessions[sessionId]) {
     delete charSessions[sessionId];
-    localStorage.setItem('odysseus-char-sessions', JSON.stringify(charSessions));
+    localStorage.setItem('Zeus-char-sessions', JSON.stringify(charSessions));
   }
   // If we were in that persistent chat, fully clear state
   if (window._persistentChatSession === sessionId) {

@@ -1,5 +1,5 @@
 /* ============================================ */
-/* Odysseus UI — Consolidated Stylesheet        */
+/* Zeus UI — Consolidated Stylesheet            */
 /* ============================================ */
 
 
@@ -16,12 +16,12 @@
  */
 
 :root {
-  /* Core palette */
-  --bg: #282c34;
-  --fg: #9cdef2;
-  --panel: #111;
-  --border: #355a66;
-  --red: #e06c75;
+  /* Core palette — Zeus Combo 09 (Noturno + Vulcanico) */
+  --bg: #001621;
+  --fg: #FF4103;
+  --panel: #001a2e;
+  --border: #0d3347;
+  --red: #FF4103;
   /* Were `var(--green)` / `var(--warn)` — self-referential, so they
      resolved to invalid and every site fell back to its own literal
      (or, for sites with no fallback, painted as transparent/inherit).
@@ -30,16 +30,16 @@
   --warn: #f0ad4e;
 
   /* Syntax highlighting */
-  --hl-bg: #1e2228;
-  --hl-fg: #9cdef2;
-  --hl-keyword: #c678dd;
-  --hl-string: #e5c07b;
-  --hl-comment: #828997;
-  --hl-function: #61afef;
-  --hl-number: #d19a66;
-  --hl-builtin: #56b6c2;
-  --hl-variable: #abb2bf;
-  --hl-params: #a8c0d4;
+  --hl-bg: #001a2e;
+  --hl-fg: #FF4103;
+  --hl-keyword: #FF4103;
+  --hl-string: #ffb899;
+  --hl-comment: #4a6678;
+  --hl-function: #ff7847;
+  --hl-number: #ff9566;
+  --hl-builtin: #ff5723;
+  --hl-variable: #ffd4c2;
+  --hl-params: #ffb899;
 
   /* Semantic colors */
   --color-error: #ff4444;
@@ -51,13 +51,13 @@
   --color-recording-hover: #d63031;
   --color-muted: #888;
   --color-muted-alt: #6b7280;
-  --color-accent: #00aaff;
-  --color-agent-active: #00ff00;
-  --color-brand-blue: #3b82f6;
+  --color-accent: #FF4103;
+  --color-agent-active: #FF4103;
+  --color-brand-blue: #FF4103;
   --color-blind-orange: #ff9800;
   --color-save-green: var(--color-success);
-  --color-link-hover: #66c7ff;
-  --color-subheader: #6b8a94;
+  --color-link-hover: #ff7847;
+  --color-subheader: #4a6678;
   --select-bg: var(--bg);
   --select-fg: var(--fg);
   --select-option-bg: color-mix(in srgb, var(--panel) 74%, var(--bg));
@@ -65,7 +65,7 @@
   --select-option-active-bg: color-mix(in srgb, var(--accent, var(--red)) 24%, var(--panel));
   /* Warm accent — used by the Goals/Today UI in Notes. Lives as a token so
      themes can override without touching the goal CSS. */
-  --accent-warm: #d19a66;
+  --accent-warm: #FF4103;
 }
 
 :root.light {

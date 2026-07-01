@@ -1,4 +1,4 @@
-// Odysseus UI — Initialization Scripts
+// Zeus UI — Initialization Scripts
 // ES6 module — extracted from index.html inline scripts
 
 import Storage from './storage.js';
@@ -31,10 +31,11 @@ window.addEventListener('pageshow', clearFreshComposerRestore);
     const data = await res.json().catch(() => ({}));
     const liveUser = (data && data.username) || '';
     if (!liveUser) return;
-    const KEY = 'odysseus-auth-user';
-    const cachedUser = localStorage.getItem(KEY);
+    const KEY = 'zeus-auth-user';
+    const LEGACY_KEY = 'odysseus-auth-user';
+    const cachedUser = localStorage.getItem(KEY) || localStorage.getItem(LEGACY_KEY);
     if (cachedUser && cachedUser !== liveUser) {
-      const _keepKeys = new Set(['odysseus-last-user', KEY]);
+      const _keepKeys = new Set(['zeus-last-user', 'odysseus-last-user', KEY, LEGACY_KEY]);
       const toRemove = [];
       for (let i = 0; i < localStorage.length; i++) {
         const k = localStorage.key(i);

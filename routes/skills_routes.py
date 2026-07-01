@@ -1289,45 +1289,54 @@ def setup_skills_routes(skills_manager: SkillsManager) -> APIRouter:
 
     @router.post("/import-bulk-from-repo")
     async def import_skills_bulk_from_repo(request: Request, body: SkillBulkImportRequest):
-        """Install every SKILL.md-containing top-level folder from a public
-        GitHub repo (e.g. a curated skills collection). One repo-listing call
-        plus one best-effort fetch attempt per top-level folder; folders
-        without a SKILL.md are skipped, not treated as errors."""
+        """Install every SKILL.md found anywhere in a public GitHub repo (or
+        repo subpath) — a flat "one skill per top-level folder" collection
+        and a deeply nested plugin/marketplace layout both work, since the
+        listing walks the whole tree in one call. Folders that fail to fetch
+        are skipped and reported, not treated as a whole-request error."""
         require_admin(request)
         user = _owner(request)
         from services.memory.skill_importer import (
             SkillImportError,
             fetch_skill_bundle,
-            list_repo_top_dirs,
+            list_repo_skill_dirs,
         )
 
         try:
-            src, dirs = list_repo_top_dirs(body.url.strip())
+            src, dirs = list_repo_skill_dirs(body.url.strip())
         except SkillImportError as e:
             raise HTTPException(400, str(e)) from e
         except httpx.HTTPError as e:
             logger.warning("bulk skill import listing failed: %s", e)
             raise HTTPException(502, str(e).strip() or "Could not list repository") from e
 
+        if not dirs:
+            return {
+                "ok": True, "repo": f"{src.owner}/{src.repo}",
+                "candidates": 0, "imported": 0, "skipped": 0, "results": [],
+            }
+
         limit = max(1, min(int(body.max_skills or 50), 100))
-        base = src.path.strip("/") if src.path else ""
         results = []
-        for name in dirs[:limit]:
-            rel = f"{base}/{name}" if base else name
-            folder_url = f"https://github.com/{src.owner}/{src.repo}/tree/{src.ref}/{rel}"
+        for rel in dirs[:limit]:
+            folder_url = (
+                f"https://github.com/{src.owner}/{src.repo}/tree/{src.ref}/{rel}" if rel
+                else f"https://github.com/{src.owner}/{src.repo}/tree/{src.ref}"
+            )
+            label = rel or src.repo
             try:
                 files, _ = fetch_skill_bundle(folder_url)
                 entry = skills_manager.import_bundle_from_files(
                     files, owner=user, source_url=folder_url,
                 )
-                results.append({"folder": name, "ok": True, "skill": entry.get("name")})
+                results.append({"folder": label, "ok": True, "skill": entry.get("name")})
             except SkillImportError as e:
-                results.append({"folder": name, "ok": False, "skipped": True, "reason": str(e)})
+                results.append({"folder": label, "ok": False, "skipped": True, "reason": str(e)})
             except httpx.HTTPError as e:
-                results.append({"folder": name, "ok": False, "skipped": True, "reason": f"fetch failed: {e}"})
+                results.append({"folder": label, "ok": False, "skipped": True, "reason": f"fetch failed: {e}"})
             except Exception as e:
-                logger.warning("bulk skill import failed for folder %r: %s", name, e)
-                results.append({"folder": name, "ok": False, "skipped": True, "reason": "import failed"})
+                logger.warning("bulk skill import failed for folder %r: %s", label, e)
+                results.append({"folder": label, "ok": False, "skipped": True, "reason": "import failed"})
 
         imported = sum(1 for r in results if r["ok"])
         if imported:

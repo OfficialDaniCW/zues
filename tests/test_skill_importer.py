@@ -7,6 +7,7 @@ from services.memory.skill_importer import (
     _assert_github_url,
     _fetch_bytes,
     _list_github_dir,
+    list_repo_skill_dirs,
     list_repo_top_dirs,
     parse_skill_source,
 )
@@ -216,3 +217,94 @@ def test_list_repo_top_dirs_rejects_non_directory_listing(monkeypatch):
     _mock_httpx_client(monkeypatch, _Resp())
     with pytest.raises(SkillImportError, match="expected a directory"):
         list_repo_top_dirs("https://github.com/o/r/blob/main/SKILL.md")
+
+
+def test_list_repo_skill_dirs_flat_layout(monkeypatch):
+    class _Resp:
+        url = "https://api.github.com/repos/o/r/git/trees/main?recursive=1"
+        status_code = 200
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "sha": "abc", "truncated": False,
+                "tree": [
+                    {"path": "README.md", "type": "blob"},
+                    {"path": "theme-factory", "type": "tree"},
+                    {"path": "theme-factory/SKILL.md", "type": "blob"},
+                    {"path": "theme-factory/scripts/render.py", "type": "blob"},
+                    {"path": "document-skills/SKILL.md", "type": "blob"},
+                ],
+            }
+
+    _mock_httpx_client(monkeypatch, _Resp())
+    src, dirs = list_repo_skill_dirs("https://github.com/ComposioHQ/awesome-claude-skills")
+    assert src.owner == "ComposioHQ"
+    assert dirs == ["theme-factory", "document-skills"]
+
+
+def test_list_repo_skill_dirs_deeply_nested_layout(monkeypatch):
+    """alirezarezvani/claude-skills shape: SKILL.md several levels deep
+    under category/plugin/skills/<name>/SKILL.md, not one-per-top-folder."""
+    class _Resp:
+        url = "https://api.github.com/repos/o/r/git/trees/main?recursive=1"
+        status_code = 200
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "sha": "abc", "truncated": False,
+                "tree": [
+                    {"path": "engineering", "type": "tree"},
+                    {"path": "engineering/agenthub", "type": "tree"},
+                    {"path": "engineering/agenthub/skills/board/SKILL.md", "type": "blob"},
+                    {"path": "marketing-skill/skills/aeo/SKILL.md", "type": "blob"},
+                    {"path": "README.md", "type": "blob"},
+                ],
+            }
+
+    _mock_httpx_client(monkeypatch, _Resp())
+    src, dirs = list_repo_skill_dirs("https://github.com/alirezarezvani/claude-skills")
+    assert dirs == ["engineering/agenthub/skills/board", "marketing-skill/skills/aeo"]
+
+
+def test_list_repo_skill_dirs_scopes_to_subpath(monkeypatch):
+    class _Resp:
+        url = "https://api.github.com/repos/o/r/git/trees/main?recursive=1"
+        status_code = 200
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "sha": "abc", "truncated": False,
+                "tree": [
+                    {"path": "keep/skill-a/SKILL.md", "type": "blob"},
+                    {"path": "other/skill-b/SKILL.md", "type": "blob"},
+                ],
+            }
+
+    _mock_httpx_client(monkeypatch, _Resp())
+    src, dirs = list_repo_skill_dirs("https://github.com/o/r/tree/main/keep")
+    assert dirs == ["keep/skill-a"]
+
+
+def test_list_repo_skill_dirs_rejects_non_tree_response(monkeypatch):
+    class _Resp:
+        url = "https://api.github.com/repos/o/r/git/trees/main?recursive=1"
+        status_code = 200
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"message": "Not Found"}
+
+    _mock_httpx_client(monkeypatch, _Resp())
+    with pytest.raises(SkillImportError, match="expected a repository tree"):
+        list_repo_skill_dirs("https://github.com/o/r")

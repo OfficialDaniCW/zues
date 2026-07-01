@@ -652,6 +652,11 @@ app.include_router(setup_history_routes(session_manager))
 from routes.history_import_routes import setup_history_import_routes
 app.include_router(setup_history_import_routes())
 
+# Brain visualizer (/brain) — owner-scoped embedding-space scatter over
+# memory + RAG (which includes imported ChatGPT/Claude history + documents)
+from routes.brain_viz_routes import setup_brain_viz_routes
+app.include_router(setup_brain_viz_routes())
+
 # Search
 from routes.search_routes import setup_search_routes
 app.include_router(setup_search_routes(config))
@@ -887,6 +892,13 @@ async def serve_login(request: Request):
     if not AUTH_ENABLED:
         return RedirectResponse(url="/", status_code=302)
     return serve_html_with_nonce(request, abs_join(BASE_DIR, "static/login.html"))
+
+@app.get("/brain")
+async def serve_brain(request: Request):
+    """Standalone embedding-space visualizer — auth comes from the global
+    AuthMiddleware (not exempted, same as /notes, /email, etc), and the
+    /api/brain-viz/* routes are owner-scoped on top of that."""
+    return serve_html_with_nonce(request, abs_join(BASE_DIR, "static/brain.html"))
 
 @app.get("/api/version")
 async def get_version():

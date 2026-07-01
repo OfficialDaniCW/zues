@@ -303,6 +303,53 @@ def list_repo_top_dirs(url: str) -> Tuple[ResolvedSource, List[str]]:
     return src, dirs
 
 
+def list_repo_skill_dirs(url: str) -> Tuple[ResolvedSource, List[str]]:
+    """Find every directory containing a SKILL.md anywhere in a GitHub repo
+    (or repo subpath) — one recursive git-trees API call. Unlike
+    ``list_repo_top_dirs`` (one skill per top-level folder only), this
+    handles arbitrary nesting — a plain collection repo (``<name>/SKILL.md``)
+    and a deep plugin/marketplace layout (e.g.
+    ``category/plugin/skills/<name>/SKILL.md``) both work the same way.
+    Returns directory paths relative to the repo root (not to ``src.path``).
+    """
+    src = parse_skill_source(url)
+    base_path = _safe_relpath(src.path) if src.path else ""
+    api_url = (
+        f"https://api.github.com/repos/{src.owner}/{src.repo}"
+        f"/git/trees/{quote(src.ref, safe='')}?recursive=1"
+    )
+    ok, reason = check_outbound_url(api_url)
+    if not ok:
+        raise SkillImportError(reason)
+    with httpx.Client(follow_redirects=True, timeout=30.0) as client:
+        r = client.get(api_url, headers={"Accept": "application/vnd.github+json"})
+        if r.status_code >= 400:
+            raise _github_response_error(r)
+        _assert_github_url(str(r.url), context="redirect target")
+        data = r.json()
+    if not isinstance(data, dict) or not isinstance(data.get("tree"), list):
+        raise SkillImportError("expected a repository tree from GitHub")
+    if data.get("truncated"):
+        logger.warning(
+            "skill listing truncated for %s/%s — very large repo, results may be incomplete",
+            src.owner, src.repo,
+        )
+
+    dirs: List[str] = []
+    for ent in data["tree"]:
+        if not isinstance(ent, dict) or ent.get("type") != "blob":
+            continue
+        path = ent.get("path") or ""
+        is_skill_md = path == "SKILL.md" or path.endswith("/SKILL.md")
+        if not is_skill_md:
+            continue
+        if base_path and not (path == f"{base_path}/SKILL.md" or path.startswith(f"{base_path}/")):
+            continue
+        skill_dir = path.rsplit("/", 1)[0] if "/" in path else ""
+        dirs.append(skill_dir)
+    return src, dirs
+
+
 def pick_skill_md(files: Dict[str, str]) -> Tuple[str, str]:
     for rel, content in files.items():
         if rel.lower().endswith("skill.md"):

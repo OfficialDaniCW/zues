@@ -13,7 +13,7 @@ from typing import List, Optional
 
 import httpx
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field
 
 from services.memory.skills import SkillsManager
@@ -1345,6 +1345,53 @@ def setup_skills_routes(skills_manager: SkillsManager) -> APIRouter:
             "ok": True,
             "repo": f"{src.owner}/{src.repo}",
             "candidates": len(dirs),
+            "imported": imported,
+            "skipped": len(results) - imported,
+            "results": results,
+        }
+
+    @router.post("/import-bulk-from-zip")
+    async def import_skills_bulk_from_zip(
+        request: Request, file: UploadFile = File(...), max_skills: int = 500,
+    ):
+        """Same as import-bulk-from-repo but from an uploaded .zip (e.g. a
+        GitHub "Download ZIP" export) instead of the GitHub API — no rate
+        limit, so this is the way to go for a repo with hundreds of skills."""
+        require_admin(request)
+        user = _owner(request)
+        from services.memory.skill_importer import SkillImportError, extract_skill_bundles_from_zip
+
+        raw = await file.read()
+        if not raw:
+            raise HTTPException(400, "Uploaded file is empty")
+
+        try:
+            bundles = extract_skill_bundles_from_zip(
+                raw, max_skills=max(1, min(int(max_skills or 500), 1000)),
+            )
+        except SkillImportError as e:
+            raise HTTPException(400, str(e)) from e
+
+        results = []
+        for label, files in bundles:
+            try:
+                entry = skills_manager.import_bundle_from_files(
+                    files, owner=user, source_url=f"zip:{file.filename}:{label}",
+                )
+                results.append({"folder": label, "ok": True, "skill": entry.get("name")})
+            except SkillImportError as e:
+                results.append({"folder": label, "ok": False, "skipped": True, "reason": str(e)})
+            except Exception as e:
+                logger.warning("zip skill import failed for %r: %s", label, e)
+                results.append({"folder": label, "ok": False, "skipped": True, "reason": "import failed"})
+
+        imported = sum(1 for r in results if r["ok"])
+        if imported:
+            _fire_skill_added(user)
+        return {
+            "ok": True,
+            "source": file.filename,
+            "candidates": len(bundles),
             "imported": imported,
             "skipped": len(results) - imported,
             "results": results,

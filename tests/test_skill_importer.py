@@ -1,4 +1,7 @@
 """Skill URL importer — GitHub path parsing."""
+import io
+import zipfile
+
 import pytest
 
 from services.memory.skill_importer import (
@@ -7,6 +10,7 @@ from services.memory.skill_importer import (
     _assert_github_url,
     _fetch_bytes,
     _list_github_dir,
+    extract_skill_bundles_from_zip,
     list_repo_skill_dirs,
     list_repo_top_dirs,
     parse_skill_source,
@@ -308,3 +312,56 @@ def test_list_repo_skill_dirs_rejects_non_tree_response(monkeypatch):
     _mock_httpx_client(monkeypatch, _Resp())
     with pytest.raises(SkillImportError, match="expected a repository tree"):
         list_repo_skill_dirs("https://github.com/o/r")
+
+
+def _make_zip(entries: dict) -> bytes:
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        for path, content in entries.items():
+            zf.writestr(path, content)
+    return buf.getvalue()
+
+
+def test_extract_skill_bundles_from_zip_finds_real_skills_and_siblings():
+    data = _make_zip({
+        "repo-main/marketing-skill/skills/aeo/SKILL.md": "---\nname: aeo\ndescription: x\n---\nbody",
+        "repo-main/marketing-skill/skills/aeo/scripts/run.py": "print('hi')",
+        "repo-main/engineering/skills/board/SKILL.md": "---\nname: board\ndescription: y\n---\nbody",
+        "repo-main/README.md": "not a skill",
+    })
+    bundles = extract_skill_bundles_from_zip(data)
+    labels = sorted(label for label, _ in bundles)
+    assert labels == ["engineering/skills/board", "marketing-skill/skills/aeo"]
+
+    aeo_files = dict(bundles)["marketing-skill/skills/aeo"]
+    assert "SKILL.md" in aeo_files
+    assert "scripts/run.py" in aeo_files
+    assert aeo_files["SKILL.md"].startswith("---")
+
+
+def test_extract_skill_bundles_from_zip_skips_dotdir_mirrors_and_non_frontmatter():
+    data = _make_zip({
+        # Real skill.
+        "repo-main/marketing-skill/skills/aeo/SKILL.md": "---\nname: aeo\n---\nbody",
+        # Broken-symlink-style mirror under a dot-prefixed tool dir — must be skipped.
+        "repo-main/.gemini/skills/aeo/SKILL.md": "../../../marketing-skill/skills/aeo/SKILL.md",
+        # A SKILL.md-named fixture with no real frontmatter — must be skipped.
+        "repo-main/engineering/skills/skill-tester/assets/sample-skill/SKILL.md": "# Sample Text Processor\n\nNot real frontmatter",
+    })
+    bundles = extract_skill_bundles_from_zip(data)
+    labels = [label for label, _ in bundles]
+    assert labels == ["marketing-skill/skills/aeo"]
+
+
+def test_extract_skill_bundles_from_zip_respects_max_skills():
+    entries = {}
+    for i in range(5):
+        entries[f"repo-main/cat/skills/s{i}/SKILL.md"] = f"---\nname: s{i}\n---\nbody"
+    data = _make_zip(entries)
+    bundles = extract_skill_bundles_from_zip(data, max_skills=2)
+    assert len(bundles) == 2
+
+
+def test_extract_skill_bundles_from_zip_rejects_bad_zip():
+    with pytest.raises(SkillImportError, match="not a valid .zip"):
+        extract_skill_bundles_from_zip(b"not a zip file")
